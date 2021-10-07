@@ -1,0 +1,163 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+import time
+data$diagnosis <- as.factor(data$diagnosis)
+# the 33 column is invalid
+data[,33] <- NULL
+str(data)
+head(data)
+summary(data)
+prop.table(table(data$diagnosis))
+options(repr.plot.width=4, repr.plot.height=4)
+ggplot(data, aes(x=diagnosis))+geom_bar(fill="blue",alpha 0.5)+theme_bw()+labs(title="Distribution of 
+Diagnosis)
+plot_num(data %>% select(-id), bins=10)
+correlationMatrix <- cor(data[,3:ncol(data)])
+corrplot(correlationMatrix, order = "hclust", tl.cex = 1, addrect = 8)
+# find attributes that are highly corrected (ideally >0.90)
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.9)
+# print indexes of highly correlated attributes
+print(highlyCorrelated)
+# Remove correlated variables
+data2 <- data %>%select(-highlyCorrelated)
+# number of columns after removing correlated variables
+ncol(data2)
+pca_res_data <- prcomp(data[,3:ncol(data)], center = TRUE, scale = TRUE)
+plot(pca_res_data, type="l")
+summary(pca_res_data)
+pca_res_data2 <- prcomp(data2[,3:ncol(data2)], center = TRUE, scale = TRUE)
+plot(pca_res_data2, type="l")
+summary(pca_res_data2)
+pca_df <- as.data.frame(pca_res_data2$x)
+ggplot(pca_df, aes(x=PC1, y=PC2, col=data$diagnosis)) + geom_point(alpha=0.5)
+g_pc1 <- ggplot(pca_df, aes(x=PC1, fill=data$diagnosis)) + geom_density(alpha=0.25)
+g_pc2 <- ggplot(pca_df, aes(x=PC2, fill=data$diagnosis)) + geom_density(alpha=0.25)
+grid.arrange(g_pc1, g_pc2, ncol=2)
+lda_res_data <- MASS::lda(diagnosis~., data = data, center = TRUE, scale = TRUE)
+lda_res_data
+#Data frame of the LDA for visualization purposes
+lda_df_predict <- predict(lda_res_data, data)$x %>% as.data.frame() %>% 
+cbind(diagnosis=data$diagnosis)
+ggplot(lda_df_predict, aes(x=LD1, fill=diagnosis)) + geom_density(alpha=0.5)
+set.seed(1815)
+data3 <- cbind (diagnosis=data$diagnosis, data2)
+data_sampling_index <- createDataPartition(data$diagnosis, times=1, p=0.8, list = FALSE)
+train_data <- data3[data_sampling_index, ]
+test_data <- data3[-data_sampling_index, ]
+fitControl <- trainControl(method="cv", #Control the computational nuances of thetrainfunction
+number = 15, #Either the number of folds or number of resampling iterations
+classProbs = TRUE,
+summaryFunction = twoClassSummary)
+model_naiveb <- train(diagnosis~.,
+train_data,
+method="nb",
+metric="ROC",
+preProcess=c('center', 'scale'), #in order to normalize the data
+trace=FALSE,
+trControl=fitControl)
+prediction_naiveb <- predict(model_naiveb, test_data)
+confusionmatrix_naiveb <- confusionMatrix(prediction_naiveb, test_data$diagnosis, positive = "M")
+confusionmatrix_naiveb
+plot(varImp(model_naiveb), top=10, main="Top variables- Naive Bayes")
+model_logreg<- train(diagnosis ~., data = train_data, method = "glm",
+metric = "ROC",
+preProcess = c("scale", "center"), # in order to normalize the data
+trControl= fitControl)
+prediction_logreg<- predict(model_logreg, test_data)
+# Check results
+confusionmatrix_logreg <- confusionMatrix(prediction_logreg, test_data$diagnosis, positive = "M")
+confusionmatrix_logreg
+plot(varImp(model_logreg), top=10, main="Top variables - Log Regr")
+model_randomforest <- train(diagnosis~.,
+train_data,
+method="rf", #also recommended ranger, because it is a lot faster than original randomForest (rf)
+metric="ROC",
+#tuneLength=10,
+#tuneGrid = expand.grid(mtry = c(2, 3, 6)),
+preProcess = c('center', 'scale'),
+trControl=fitControl)
+prediction_randomforest <- predict(model_randomforest, test_data)
+#Check results
+confusionmatrix_randomforest <- confusionMatrix(prediction_randomforest, test_data$diagnosis, positive 
+= "M")
+confusionmatrix_randomforest
+plot(varImp(model_randomforest), top=10, main="Top variables- Random Forest")
+model_knn <- train(diagnosis~.,
+train_data,
+method="knn",
+metric="ROC",
+preProcess = c('center', 'scale'),
+tuneLength=10, #The tuneLength parameter tells the algorithm to try different default values for the main 
+parameter
+#In this case we used 10 default values
+trControl=fitControl)
+prediction_knn <- predict(model_knn, test_data)
+confusionmatrix_knn <- confusionMatrix(prediction_knn, test_data$diagnosis, positive = "M")
+confusionmatrix_knn
+plot(varImp(model_knn), top=10, main="Top variables - KNN")
+model_nnet_pca <- train(diagnosis~.,
+train_data,
+method="nnet",
+metric="ROC",
+preProcess=c('center', 'scale', 'pca'),
+tuneLength=10,
+trace=FALSE,
+trControl=fitControl)
+prediction_nnet_pca <- predict(model_nnet_pca, test_data)
+confusionmatrix_nnet_pca <- confusionMatrix(prediction_nnet_pca, test_data$diagnosis, positive = "M")
+confusionmatrix_nnet_pca
+plot(varImp(model_nnet_pca), top=8, main="Top variables - NNET PCA")
+train_data_lda <- lda_df_predict[data_sampling_index, ]
+test_data_lda <- lda_df_predict[-data_sampling_index, ]
+model_nnet_lda <- train(diagnosis~.,
+train_data_lda,
+method="nnet",
+metric="ROC",
+preProcess=c('center', 'scale'),
+tuneLength=10,
+trace=FALSE,
+trControl=fitControl)
+prediction_nnet_lda <- predict(model_nnet_lda, test_data_lda)
+confusionmatrix_nnet_lda <- confusionMatrix(prediction_nnet_lda, test_data_lda$diagnosis, 
+positive = "M")
+confusionmatrix_nnet_lda
+models_list <- list(Naive_Bayes=model_naiveb,
+Logistic_regr=model_logreg,
+Random_Forest=model_randomforest,
+KNN=model_knn,
+Neural_PCA=model_nnet_pca,
+Neural_LDA=model_nnet_lda)
+models_results <- resamples(models_list)
+summary(models_results)
+bwplot(models_results, metric="ROC")
+confusionmatrix_list <- list(
+Naive_Bayes=confusionmatrix_naiveb,
+Logistic_regr=confusionmatrix_logreg,
+Random_Forest=confusionmatrix_randomforest,
+KNN=confusionmatrix_knn,
+Neural_PCA=confusionmatrix_nnet_pca,
+Neural_LDA=confusionmatrix_nnet_lda)
+confusionmatrix_list_results <- sapply(confusionmatrix_list, function(x) x$byClass)
+confusionmatrix_list_results %>% knitr::kable()
+confusionmatrix_results_max <- apply(confusionmatrix_list_results, 1, which.is.max)
+output_report <- data.frame(metric=names(confusionmatrix_results_max),
+best_model=colnames(confusionmatrix_list_results)[confusionmatrix_results_max],
+value=mapply(function(x,y) {confusionmatrix_list_results[x,y]},
+names(confusionmatrix_results_max),
+confusionmatrix_results_max))
+rownames(output_report) <- NULL
+output_repor
